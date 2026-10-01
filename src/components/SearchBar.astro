@@ -1,0 +1,179 @@
+---
+import { defaultSearchConfig } from "../config.js";
+import { getSearchTranslations } from "../i18n.js";
+import type { SearchBarProps as Props } from "../component-props.js";
+const resolvedLocale = Astro.props.locale ?? Astro.props.config?.locale ?? defaultSearchConfig.locale;
+const labels = { ...getSearchTranslations(resolvedLocale).labels, ...Astro.props.config?.labels };
+const {
+  config = defaultSearchConfig,
+  direction = config.direction ?? "auto",
+  class: className,
+  action = config.pageURL,
+  id: inputId = "site-search",
+  indexURL = config.indexURL,
+  queryParam = config.queryParam,
+  label = labels.label,
+  placeholder = labels.placeholder,
+  buttonLabel = labels.button,
+  unstyled = false,
+  inputClass,
+  buttonClass,
+  labelClass,
+  labelHidden = true,
+} = Astro.props;
+---
+
+<form
+  lang={resolvedLocale}
+  dir={direction}
+  action={action}
+  data-search-form
+  data-search-index={indexURL}
+  method="get"
+  data-styled={unstyled ? undefined : ""}
+  class:list={["search-bar", className]}
+  role="search"
+>
+  <label
+    class:list={["search-label", labelClass]}
+    data-visually-hidden={labelHidden ? "" : undefined}
+    for={inputId}>{label}</label
+  >
+  <input
+    id={inputId}
+    name={queryParam}
+    type="search"
+    placeholder={placeholder}
+    autocomplete="off"
+    class:list={["search-input", inputClass]}
+  />
+  <button
+    type="submit"
+    aria-label={buttonLabel}
+    class:list={["search-button", buttonClass]}
+    data-tooltip={buttonLabel}
+  >
+    <slot name="button"
+      ><svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="1em"
+        height="1em"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+      >
+        <path d="m21 21l-4.34-4.34"></path>
+        <circle cx="11" cy="11" r="8"></circle>
+      </svg></slot
+    >
+  </button>
+</form>
+
+<script>
+  function setupSearchForms() {
+    for (const form of document.querySelectorAll<HTMLFormElement>(
+      "[data-search-form]",
+    )) {
+      const input = form.querySelector<HTMLInputElement>(
+        'input[type="search"]',
+      );
+      if (!input) continue;
+      input.value =
+        new URLSearchParams(window.location.search).get(input.name) ?? "";
+      if (input.dataset.prefetchBound) continue;
+      input.dataset.prefetchBound = "true";
+      const indexURL = form.dataset.searchIndex!;
+      const prefetch = () => {
+        if (
+          [
+            ...document.querySelectorAll<HTMLLinkElement>(
+              'link[rel="prefetch"]',
+            ),
+          ].some((link) => link.getAttribute("href") === indexURL)
+        )
+          return;
+        const link = document.createElement("link");
+        link.rel = "prefetch";
+        link.as = "fetch";
+        link.href = indexURL;
+        link.crossOrigin = "anonymous";
+        document.head.append(link);
+      };
+      input.addEventListener("focus", prefetch, { once: true });
+      input.addEventListener("input", prefetch, { once: true });
+    }
+  }
+  setupSearchForms();
+  document.addEventListener("astro:page-load", setupSearchForms);
+</script>
+
+<style>
+  .search-bar[data-styled] {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+  }
+  .search-label[data-visually-hidden] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .search-bar[data-styled] :is(.search-input, .search-button) {
+    color: var(--search-color, white);
+    background: var(--search-background, rgb(255 255 255 / 10%));
+    border: 2px solid var(--search-border, rgb(255 255 255 / 20%));
+    transition:
+      background-color 150ms,
+      border-color 150ms;
+  }
+  .search-bar[data-styled] .search-input {
+    width: 100%;
+    min-width: 0;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    border-radius: 0;
+    border-start-start-radius: 9999px;
+    border-end-start-radius: 9999px;
+    outline: none;
+  }
+  .search-bar[data-styled] .search-input::placeholder {
+    color: var(--search-placeholder, #d4d4d8);
+  }
+  .search-bar[data-styled] .search-input:focus {
+    border-color: var(--search-focus, rgb(255 255 255 / 60%));
+  }
+  .search-bar[data-styled] .search-input::-webkit-search-cancel-button {
+    filter: grayscale(1);
+  }
+  .search-bar[data-styled] .search-button {
+    width: 3rem;
+    flex-shrink: 0;
+    padding-block: 0.5rem;
+    padding-inline: 0.5rem 0.75rem;
+    border-inline-start: 0;
+    border-radius: 0;
+    border-start-end-radius: 9999px;
+    border-end-end-radius: 9999px;
+    cursor: pointer;
+  }
+  .search-bar[data-styled] .search-button > :global(svg) {
+    margin: auto;
+  }
+  .search-bar[data-styled] .search-button:hover {
+    background: var(--search-hover, rgb(255 255 255 / 20%));
+  }
+  .search-bar[data-styled] .search-button:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+</style>
