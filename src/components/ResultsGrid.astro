@@ -1,0 +1,188 @@
+---
+import { defaultSearchConfig } from "../config.js";
+import { getSearchTranslations } from "../i18n.js";
+import type { ResultsGridProps as Props } from "../component-props.js";
+const {
+  config = defaultSearchConfig,
+  direction = config.direction ?? "auto",
+  queryParam = config.queryParam,
+  gridClass = "",
+  itemLabel,
+  itemsLabel,
+  locale = config.locale ?? "pt-BR",
+  class: className,
+  messages: customMessages = {},
+  unstyled = false,
+} = Astro.props;
+const translation = getSearchTranslations(locale);
+const messages = {
+  ...translation.messages,
+  ...(itemLabel ? { singular: translation.formatFound(itemLabel) } : {}),
+  ...(itemsLabel ? { plural: translation.formatFound(itemsLabel, true) } : {}),
+  ...config.messages,
+  ...customMessages,
+};
+---
+
+<section
+  lang={locale}
+  dir={direction}
+  data-search-root
+  data-search-config={JSON.stringify({ ...config, locale })}
+  data-search-query-param={queryParam}
+  data-search-messages={JSON.stringify(messages)}
+  data-search-locale={locale}
+  data-styled={unstyled ? undefined : ""}
+  aria-live="polite"
+  aria-busy="true"
+  class:list={["results-grid", className]}
+>
+  <div data-search-state="idle" hidden>
+    <slot name="idle"><p>{messages.idle}</p></slot>
+  </div>
+  <div data-search-state="invalid" hidden>
+    <slot name="invalid"><p>{messages.invalid}</p></slot>
+  </div>
+  <div data-search-state="loading">
+    <slot name="loading"><p>{messages.loading}</p></slot>
+  </div>
+  <div data-search-state="empty" hidden>
+    <slot name="empty"><p>{messages.empty}</p></slot>
+  </div>
+  <div data-search-state="error" hidden>
+    <slot name="error"><p>{messages.error}</p></slot>
+  </div>
+  <div data-search-state="success" hidden>
+    <slot name="success"
+      ><p>
+        <span data-search-count></span>
+        <span data-search-count-label></span>
+      </p></slot
+    >
+  </div>
+  <div
+    data-search-results
+    hidden
+    data-default-grid={!unstyled && !gridClass ? "" : undefined}
+    class:list={["results-grid-items", gridClass]}
+  >
+  </div>
+  <template data-search-item><slot name="item" /></template>
+</section>
+
+<script>
+  import {
+    createSearch,
+    type SearchSettings,
+    type SearchState,
+  } from "../core.js";
+  import { createTemplateRenderer } from "../template.js";
+  import type { SearchMessages } from "../i18n.js";
+
+  type Binding = {
+    search: ReturnType<typeof createSearch<unknown>>;
+    render: (state: SearchState<unknown>) => void;
+  };
+  const bindings = new WeakMap<HTMLElement, Binding>();
+
+  function bind(root: HTMLElement): Binding | undefined {
+    const results = root.querySelector<HTMLElement>("[data-search-results]");
+    const template = root.querySelector<HTMLTemplateElement>(
+      "template[data-search-item]",
+    );
+    if (!results || !template) return;
+    const states = [
+      ...root.querySelectorAll<HTMLElement>("[data-search-state]"),
+    ];
+    const messages = JSON.parse(root.dataset.searchMessages!) as SearchMessages;
+    const numberFormat = new Intl.NumberFormat(root.dataset.searchLocale);
+    const pluralRules = new Intl.PluralRules(root.dataset.searchLocale);
+    const search = createSearch<unknown>(
+      JSON.parse(root.dataset.searchConfig!) as SearchSettings,
+    );
+    const renderItem = createTemplateRenderer({
+      locale: root.dataset.searchLocale,
+    });
+    return {
+      search,
+      render(state) {
+        if (!root.isConnected) return;
+        root.setAttribute("aria-busy", String(state.status === "loading"));
+        for (const element of states)
+          element.hidden = element.dataset.searchState !== state.status;
+        for (const element of root.querySelectorAll<HTMLElement>(
+          "[data-search-query]",
+        ))
+          element.textContent = state.query;
+        for (const element of root.querySelectorAll<HTMLElement>(
+          "[data-search-count]",
+        ))
+          element.textContent = numberFormat.format(state.results.length);
+        for (const element of root.querySelectorAll<HTMLElement>(
+          "[data-search-count-label]",
+        )) {
+          element.textContent =
+            messages.countLabels?.[pluralRules.select(state.results.length)]
+            ?? (state.results.length === 1 ? messages.singular : messages.plural);
+        }
+        results.hidden = state.status !== "success";
+        results.replaceChildren();
+        if (state.status === "success")
+          results.append(
+            ...state.results.map((item) => renderItem(template, item)),
+          );
+        root.dispatchEvent(
+          new CustomEvent("search:state", {
+            bubbles: true,
+            detail: {
+              query: state.query,
+              status: state.status,
+              count: state.results.length,
+            },
+          }),
+        );
+      },
+    };
+  }
+
+  function setupResultsGrids() {
+    for (const root of document.querySelectorAll<HTMLElement>(
+      "[data-search-root]",
+    )) {
+      let binding = bindings.get(root);
+      if (!binding) {
+        binding = bind(root);
+        if (!binding) continue;
+        bindings.set(root, binding);
+      }
+      const query =
+        new URLSearchParams(window.location.search).get(
+          root.dataset.searchQueryParam!,
+        ) ?? "";
+      void binding.search.run(query, binding.render);
+    }
+  }
+  setupResultsGrids();
+  document.addEventListener("astro:page-load", setupResultsGrids);
+</script>
+
+<style>
+  [data-search-state][hidden],
+  [data-search-results][hidden] {
+    display: none !important;
+  }
+  .results-grid[data-styled] {
+    display: grid;
+    gap: 1.5rem;
+  }
+  .results-grid-items[data-default-grid] {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  @media (min-width: 768px) {
+    .results-grid-items[data-default-grid] {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+</style>
